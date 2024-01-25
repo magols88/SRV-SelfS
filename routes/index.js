@@ -1,11 +1,13 @@
 var express = require("express");
 var router = express.Router();
 const AWS = require("aws-sdk");
+const s3 = new AWS.S3();
 const fs = require("fs");
 const path = require("path");
 const CyclicDb = require("@cyclic.sh/dynamodb");
 const db = CyclicDb(process.env.CYCLIC_DB);
 let contentCollection = db.collection("content");
+const { save } = require("../save_json");
 
 /* GET home page. */
 router.get("/", function (req, res, next) {
@@ -13,33 +15,47 @@ router.get("/", function (req, res, next) {
 });
 
 router.get("/json", async function (req, res, next) {
-  let data;
   try {
-    data = fs.readFileSync(
-      path.resolve(__dirname, "../data/json.json"),
-      "utf8"
-    );
+    const data = await s3
+      .getObject({
+        Bucket: "cyclic-apricot-oyster-kilt-eu-north-1",
+        Key: "data/json.json",
+      })
+      .promise();
+    const content = JSON.parse(data.Body.toString());
+    res.json({ status: "success", content });
   } catch (error) {
     console.log(error);
-    return res
-      .status(500)
-      .json({ status: "error", message: "Failed to read data" });
+    return res.json({
+      status: "error",
+      message: `Failed to load data: ${error.message}`,
+    });
   }
-  res.json({ status: "success", data: JSON.parse(data) });
 });
 
 router.post("/json", async function (req, res, next) {
   try {
-    const { json } = req.body;
-    fs.writeFileSync(
-      path.resolve(__dirname, "../data/json.json"),
-      JSON.stringify(json)
-    );
+    const { content } = req.body;
+    const { name, country } = content;
+    await save({ name, country });
   } catch (error) {
     console.log(error);
-    return res.json({ status: "error", message: "Failed to save data" });
+    return res.json({
+      status: "error",
+      message: `Failed to save data: ${error.message}`,
+    });
   }
-  res.json({ status: "success", message: "data saved" });
+  res.json({ status: "success" });
+});
+
+router.get("/dish", async function (req, res, next) {
+  let item = await contentCollection.list();
+  res.send(item);
+});
+
+router.get("/dish/:dishKey", async function (req, res, next) {
+  let item = await contentCollection.get(req.params.dishKey);
+  res.send(item);
 });
 
 router.post("/dish", async function (req, res, next) {
@@ -59,24 +75,6 @@ router.post("/dish", async function (req, res, next) {
     });
   }
   res.json({ status: "success", message: item });
-});
-
-router.get("/dish", async function (req, res, next) {
-  try {
-    let item = await contentCollection.get("content");
-    if (item === null) {
-      return res.json({
-        status: "fail",
-      });
-    } else {
-      let contentValue = content.props.value;
-      console.log(contentValue);
-      res.json({ status: "success", content: contentValue });
-    }
-  } catch (error) {
-    console.log(error);
-    return res.json({ status: "error", message: "Failed to read data" });
-  }
 });
 
 module.exports = router;
