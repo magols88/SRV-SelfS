@@ -19,11 +19,11 @@ router.get("/json", async function (req, res, next) {
     const data = await s3
       .getObject({
         Bucket: "cyclic-apricot-oyster-kilt-eu-north-1",
-        Key: "data/json.json",
+        Key: "json.json",
       })
       .promise();
     const content = JSON.parse(data.Body.toString());
-    res.json({ status: "success", content });
+    res.json({ status: "success", message: content });
   } catch (error) {
     console.log(error);
     return res.json({
@@ -34,10 +34,15 @@ router.get("/json", async function (req, res, next) {
 });
 
 router.post("/json", async function (req, res, next) {
+  const { jsonData } = req.body;
+  if (!jsonData) {
+    return res.json({
+      status: "error",
+      message: "jsonData is required",
+    });
+  }
   try {
-    const { content } = req.body;
-    const { name, country } = content;
-    await save({ name, country });
+    await save(jsonData, "json.json");
   } catch (error) {
     console.log(error);
     return res.json({
@@ -45,28 +50,49 @@ router.post("/json", async function (req, res, next) {
       message: `Failed to save data: ${error.message}`,
     });
   }
-  res.json({ status: "success" });
+  res.json({ status: "success", message: "New string added" });
 });
 
 router.get("/dish", async function (req, res, next) {
-  let item = await contentCollection.list();
-  res.send(item);
+  try {
+    const data = await s3
+      .listObjectsV2({ Bucket: "cyclic-apricot-oyster-kilt-eu-north-1" })
+      .promise();
+    res.send(data.Contents);
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      status: "error",
+      message: `Failed to load data: ${error.message}`,
+    });
+  }
 });
 
 router.get("/dish/:dishKey", async function (req, res, next) {
-  let item = await contentCollection.get(req.params.dishKey);
-  res.send(item);
+  try {
+    const data = await s3
+      .getObject({
+        Bucket: "cyclic-apricot-oyster-kilt-eu-north-1",
+        Key: req.params.dishKey,
+      })
+      .promise();
+    res.send(JSON.parse(data.Body.toString()));
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      status: "error",
+      message: `Failed to load data: ${error.message}`,
+    });
+  }
 });
 
 router.post("/dish", async function (req, res, next) {
   let item;
   try {
-    const { content } = req.body;
-    const { name, country } = content;
-    item = await contentCollection.set(name, {
-      name,
-      country,
-    });
+    const { dishesData } = req.body;
+    const { name, country } = dishesData;
+    item = { name, country };
+    await save(dishesData, "dishes.json");
   } catch (error) {
     console.log(error);
     return res.json({
